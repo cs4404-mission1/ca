@@ -4,3 +4,11 @@
 - Now we can use the client's private key to authenticate to the tabulator API
 - Watch the tabulator API and wait until it's a "good" time to invalidate the cached tokens
 - Crash the database or API to invalidate cached access tokens in API memory and/or ephemeral vote data
+
+## Mitigations
+
+Defense in depth:
+
+- Protect the CA network with a firewall (or any routed network segment)
+- Protect admin API with a firewall
+- Fix crash bug
