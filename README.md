@@ -12,3 +12,4 @@ Defense in depth:
 - Protect the CA network with a firewall (or any routed network segment)
 - Protect admin API with a firewall
 - Fix crash bug
+- Fix in memory token storage
