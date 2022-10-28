@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -16,14 +17,19 @@ func main() {
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 
-	tlsConfig := &tls.Config{
-		ClientCAs:  caCertPool,
-		ClientAuth: tls.RequireAndVerifyClientCert,
-	}
-
 	server := &http.Server{
-		Addr:      ":8443",
-		TLSConfig: tlsConfig,
+		Addr: ":8443",
+		TLSConfig: &tls.Config{
+			ClientCAs:  caCertPool,
+			ClientAuth: tls.RequireAndVerifyClientCert,
+			VerifyConnection: func(state tls.ConnectionState) error {
+				if len(state.PeerCertificates) > 0 && state.PeerCertificates[0].DNSNames[0] == "client" {
+					return nil
+				} else {
+					return fmt.Errorf("invalid client certificate")
+				}
+			},
+		},
 	}
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
