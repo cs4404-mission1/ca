@@ -31,7 +31,7 @@ func main() {
 		},
 	}
 
-	r, err := client.Get("https://server:8443/hello")
+	r, err := client.Get("https://server:8443/")
 	if err != nil {
 		log.Fatal(err)
 	}

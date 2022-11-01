@@ -4,33 +4,36 @@ DIR=tls
 
 define new_cert
 	# Generate private key
-	openssl genrsa -out $(DIR)/$1.key 2048
+	openssl genrsa -out $(DIR)/keys/$1.pem 2048
 
     # Generate CSR
-	openssl req -new -key $(DIR)/$1.key -out $(DIR)/$1.csr -subj "/CN=$1"
+	openssl req -new -key $(DIR)/keys/$1.pem -out $(DIR)/certs/$1.csr -subj "/CN=$1"
 
     # Create a x509 SAN extension config to set the cert's SAN
-	echo "authorityKeyIdentifier=keyid,issuer" > $(DIR)/$1.ext
-	echo "basicConstraints=CA:FALSE" >> $(DIR)/$1.ext
-	echo "keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment" >> $(DIR)/$1.ext
-	echo "subjectAltName = @alt_names" >> $(DIR)/$1.ext
-	echo "[alt_names]" >> $(DIR)/$1.ext
-	echo "DNS.1 = $1" >> $(DIR)/$1.ext
+	echo "authorityKeyIdentifier=keyid,issuer" > $(DIR)/certs/$1.ext
+	echo "basicConstraints=CA:FALSE" >> $(DIR)/certs/$1.ext
+	echo "keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment" >> $(DIR)/certs/$1.ext
+	echo "subjectAltName = @alt_names" >> $(DIR)/certs/$1.ext
+	echo "[alt_names]" >> $(DIR)/certs/$1.ext
+	echo "DNS.1 = $1" >> $(DIR)/certs/$1.ext
 
     # Sign the certificate
 	openssl x509 -req \
-		-in $(DIR)/$1.csr \
-		-CA $(DIR)/ca.crt \
-		-CAkey $(DIR)/ca.key \
+		-in $(DIR)/certs/$1.csr \
+		-CA $(DIR)/certs/ca.pem \
+		-CAkey $(DIR)/keys/ca.pem \
 		-CAcreateserial \
-		-out $(DIR)/$1.crt \
+		-out $(DIR)/certs/$1.pem \
 		-days 90 \
 		-sha256 \
-		-extfile $(DIR)/$1.ext
+		-extfile $(DIR)/certs/$1.ext
+
+	rm $(DIR)/certs/$1.{csr,ext}
+	rm $(DIR)/certs/ca.srl
 endef
 
 setup:
-	mkdir -p $(DIR)
+	mkdir -p $(DIR)/{certs,keys}
 
 clean:
 	rm -rf $(DIR)
@@ -39,12 +42,12 @@ clean:
 ca:
 	openssl req \
 		-x509 \
-		-newkey rsa:4096 \
+		-newkey rsa:2048 \
 		-sha256 \
 		-days 356 \
 		-nodes \
-		-keyout $(DIR)/ca.key \
-		-out $(DIR)/ca.crt \
+		-keyout $(DIR)/keys/ca.pem \
+		-out $(DIR)/certs/ca.pem \
 		-subj "/CN=CA"
 
 client:
