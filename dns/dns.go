@@ -22,8 +22,8 @@ func main() {
 	m.Id = uint16(rand.Intn(65535))
 	m.RecursionDesired = true
 	m.Question = []dns.Question{{
-		Name:   "api.internal.",
-		Qtype:  dns.TypeA,
+		Name:   "_acme-challenge.admin.shueworld.internal.",
+		Qtype:  dns.TypeTXT,
 		Qclass: dns.ClassINET,
 	}}
 
@@ -45,8 +45,8 @@ func main() {
 
 	log.Printf("Status: %d, ID: %d", r.MsgHdr.Rcode, r.Id)
 	for _, a := range r.Answer {
-		if t, ok := a.(*dns.A); ok {
-			log.Println(t.A.String())
+		if t, ok := a.(*dns.TXT); ok {
+			log.Println(t.Txt)
 		}
 	}
 }
