@@ -1,4 +1,4 @@
 .idea
 tls/
-dns/dns
-dns/exploit
+ca/ca
+exploit/exploit
