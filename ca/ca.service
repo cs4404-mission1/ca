@@ -1,0 +1,15 @@
+[Unit]
+Description=Certification Authority
+After=network.target
+
+[Service]
+User=student
+Group=student
+ExecStart=/home/student/ca
+WorkingDirectory=/home/student/
+KillMode=process
+Restart=on-failure
+Type=simple
+
+[Install]
+WantedBy=multi-user.target

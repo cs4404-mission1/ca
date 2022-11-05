@@ -4,20 +4,12 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/pem"
 	"flag"
-	"fmt"
 	"log"
-	"math/rand"
-	"net"
-	"net/http"
 	"os"
 
-	"github.com/miekg/dns"
+	"github.com/gofiber/fiber/v2"
 )
-
-// TODO
-const openapiSpec = ""
 
 var listen = flag.String("listen", ":8080", "Listen address")
 
@@ -28,78 +20,16 @@ var (
 	caCert *x509.Certificate
 )
 
-// dnsChallenge retrieves a DNS challenge for the given domain
-func dnsChallenge(domain string) (string, error) {
-	var (
-		local  = net.ParseIP("10.64.10.3")
-		remote = net.ParseIP("10.64.10.2")
-	)
-
-	// Create DNS message
-	m := new(dns.Msg)
-	m.Id = uint16(rand.Intn(65535))
-	m.RecursionDesired = true
-	m.Question = []dns.Question{{
-		Name:   dns.Fqdn("_acme-challenge." + domain),
-		Qtype:  dns.TypeTXT,
-		Qclass: dns.ClassINET,
-	}}
-
-	conn, err := net.DialUDP(
-		"udp",
-		&net.UDPAddr{IP: local, Port: 50000},
-		&net.UDPAddr{IP: remote, Port: 53},
-	)
-	if err != nil {
-		return "", err
-	}
-	defer conn.Close()
-
-	client := dns.Client{Net: "udp"}
-	r, _, err := client.ExchangeWithConn(m, &dns.Conn{Conn: conn})
-	if err != nil {
-		return "", err
-	}
-
-	if r.Rcode != dns.RcodeSuccess {
-		return "", fmt.Errorf("DNS query failed: %s", dns.RcodeToString[r.Rcode])
-	}
-
-	if len(r.Answer) == 0 {
-		return "", fmt.Errorf("no answer")
-	}
-
-	if t, ok := r.Answer[0].(*dns.TXT); !ok {
-		return "", fmt.Errorf("unexpected answer type: %T", r.Answer[0])
-	} else {
-		return t.Txt[0], nil
-	}
-}
-
-// randHex generates a random hex string of the given length
-func randHex(n int) string {
-	const letters = "0123456789abcdef"
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
-	}
-	return string(b)
-}
-
 func main() {
 	flag.Parse()
 
-	http.HandleFunc("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(openapiSpec))
-	})
+	app := fiber.New()
 
-	http.HandleFunc("/request", func(w http.ResponseWriter, r *http.Request) {
+	app.Post("/request", func(c *fiber.Ctx) error {
 		// Retrieve domain parameter
-		domain := r.URL.Query().Get("domain")
+		domain := c.Query("domain")
 		if domain == "" {
-			http.Error(w, "domain is required", http.StatusBadRequest)
-			return
+			return c.Status(400).SendString("missing domain parameter")
 		}
 
 		// Generate challenge string
@@ -107,29 +37,25 @@ func main() {
 		pendingValidations[domain] = challenge
 
 		// Return challenge string to the client
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(challenge))
+		return c.SendString(challenge)
 	})
 
-	http.HandleFunc("/validate", func(w http.ResponseWriter, r *http.Request) {
+	app.Post("/validate", func(c *fiber.Ctx) error {
 		// Retrieve domain parameter
-		domain := r.URL.Query().Get("domain")
+		domain := c.Query("domain")
 		if domain == "" {
-			http.Error(w, "domain is required", http.StatusBadRequest)
-			return
+			return c.Status(400).SendString("missing domain parameter")
 		}
 
 		// Query DNS for challenge string
 		challenge, err := dnsChallenge(domain)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
+			return c.Status(500).SendString(err.Error())
 		}
 
 		// Compare challenge string
 		if challenge != pendingValidations[domain] {
-			http.Error(w, "challenge mismatch", http.StatusUnauthorized)
-			return
+			return c.Status(400).SendString("invalid challenge")
 		}
 
 		// Cleanup challenge
@@ -138,55 +64,85 @@ func main() {
 		// Generate certificate for domain
 		certPEM, keyPEM, err := newCert(domain, caCert, ca.PrivateKey.(*rsa.PrivateKey))
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			return c.Status(500).SendString(err.Error())
 		}
 
 		// Return certificate to the client
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write(certPEM)
-		w.Write([]byte(";"))
-		w.Write(keyPEM)
+		return c.SendString(string(certPEM) + ";" + string(keyPEM))
 	})
 
-	http.HandleFunc("/challenge", func(w http.ResponseWriter, r *http.Request) {
-		// Retrieve domain parameter
-		domain := r.URL.Query().Get("domain")
-		if domain == "" {
-			http.Error(w, "domain is required", http.StatusBadRequest)
-			return
+	app.Get("/static", func(c *fiber.Ctx) error {
+		// Get url path
+		path := c.Query("path")
+		if path == "" {
+			return c.SendString(`openapi: 3.0.1
+info:
+  title: DigiShue Certificate Authority
+  description: shueca-go
+  version: 1.0.0
+servers:
+- url: https://example.com
+paths:
+  /request:
+    post:
+      summary: Request a certificate for a given domain
+      parameters:
+        - in: query
+          name: domain
+          required: true
+          schema:
+            type: string
+          description: The domain to request a certificate for
+      responses:
+        '200':
+          description: TXT challenge string
+
+  /validate:
+    post:
+      summary: Validate a domain's DNS challenge and issue a certificate 
+      parameters:
+        - in: query
+          name: domain
+          required: true
+          schema:
+            type: string
+          description: Domain to validate
+      responses:
+        '200':
+          description: PEM encoded certificate and private key
+
+  /static:
+    post:
+      summary: Retrieve a static asset
+      parameters:
+        - in: query
+          name: path
+          schema:
+            type: string
+          description: Static asset to retrieve
+      responses:
+        '200':
+          description: Static asset
+`)
 		}
 
-		// Query DNS for challenge string
-		challenge, err := dnsChallenge(domain)
+		content, err := os.ReadFile("./static/" + path)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			return
+			return c.Status(500).SendString(err.Error())
 		}
 
-		// Return challenge to user
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(challenge))
+		return c.SendString(string(content))
 	})
 
-	http.HandleFunc("/cert", func(w http.ResponseWriter, r *http.Request) {
-		filename := r.URL.Query().Get("name")
-		content, err := os.ReadFile("mtls/tls/certs/" + filename + ".pem")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
-			return
+	// Make static directory if it doesn't exist
+	if _, err := os.Stat("./static"); os.IsNotExist(err) {
+		if err := os.Mkdir("./static", 0755); err != nil {
+			log.Fatal(err)
 		}
-
-		// Parse x509 certificate
-		block, rest := pem.Decode(content)
-		log.Printf("block: %v, rest: %v", block, rest)
-
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write(content)
-	})
+	}
 
 	// Check if CA key exists
-	if _, err := os.Stat("ca-key.pem"); os.IsNotExist(err) {
+	if _, err := os.Stat("./ca-key.pem"); os.IsNotExist(err) {
 		log.Println("Generating new CA")
 		if err := newCA(); err != nil {
 			log.Fatal(err)
@@ -196,7 +152,7 @@ func main() {
 	// Import the CA cert and key to memory
 	log.Print("Importing CA")
 	var err error
-	ca, err = tls.LoadX509KeyPair("ca-crt.pem", "ca-key.pem")
+	ca, err = tls.LoadX509KeyPair("./ca-crt.pem", "./ca-key.pem")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -208,5 +164,5 @@ func main() {
 	}
 
 	log.Printf("Starting CA server on %s", *listen)
-	log.Fatal(http.ListenAndServe(*listen, nil))
+	log.Fatal(app.Listen(*listen))
 }
