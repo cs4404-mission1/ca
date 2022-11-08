@@ -11,7 +11,10 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-var listen = flag.String("listen", ":8080", "Listen address")
+var (
+	listen = flag.String("listen", ":443", "Listen address")
+	genCA  = flag.Bool("gen-ca", false, "Generate a new CA")
+)
 
 var (
 	pendingValidations = map[string]string{}
@@ -25,6 +28,12 @@ func main() {
 
 	app := fiber.New()
 
+	// Set server header
+	app.Use(func(c *fiber.Ctx) error {
+		c.Set("Server", "digishue-go")
+		return c.Next()
+	})
+
 	app.Post("/request", func(c *fiber.Ctx) error {
 		// Retrieve domain parameter
 		domain := c.Query("domain")
@@ -33,8 +42,25 @@ func main() {
 		}
 
 		// Generate challenge string
-		challenge := randHex(32)
+		challenge := randHex()
 		pendingValidations[domain] = challenge
+
+		// Return challenge string to the client
+		return c.SendString(challenge)
+	})
+
+	app.Get("/challenge", func(c *fiber.Ctx) error {
+		// Retrieve domain parameter
+		domain := c.Query("domain")
+		if domain == "" {
+			return c.Status(400).SendString("missing domain parameter")
+		}
+
+		// Query DNS for challenge string
+		challenge, err := dnsChallenge(domain)
+		if err != nil {
+			return c.Status(500).SendString(err.Error())
+		}
 
 		// Return challenge string to the client
 		return c.SendString(challenge)
@@ -78,10 +104,9 @@ func main() {
 			return c.SendString(`openapi: 3.0.1
 info:
   title: DigiShue Certificate Authority
-  description: shueca-go
   version: 1.0.0
 servers:
-- url: https://example.com
+- url: https://ca.internal
 paths:
   /request:
     post:
@@ -126,7 +151,7 @@ paths:
 `)
 		}
 
-		content, err := os.ReadFile("./static/" + path)
+		content, err := os.ReadFile("static/" + path)
 		if err != nil {
 			return c.Status(500).SendString(err.Error())
 		}
@@ -135,14 +160,14 @@ paths:
 	})
 
 	// Make static directory if it doesn't exist
-	if _, err := os.Stat("./static"); os.IsNotExist(err) {
-		if err := os.Mkdir("./static", 0755); err != nil {
+	if _, err := os.Stat("static"); os.IsNotExist(err) {
+		if err := os.Mkdir("static", 0755); err != nil {
 			log.Fatal(err)
 		}
 	}
 
 	// Check if CA key exists
-	if _, err := os.Stat("./ca-key.pem"); os.IsNotExist(err) {
+	if _, err := os.Stat("ca-key.pem"); os.IsNotExist(err) || *genCA {
 		log.Println("Generating new CA")
 		if err := newCA(); err != nil {
 			log.Fatal(err)
@@ -152,7 +177,7 @@ paths:
 	// Import the CA cert and key to memory
 	log.Print("Importing CA")
 	var err error
-	ca, err = tls.LoadX509KeyPair("./ca-crt.pem", "./ca-key.pem")
+	ca, err = tls.LoadX509KeyPair("ca-crt.pem", "ca-key.pem")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -164,5 +189,5 @@ paths:
 	}
 
 	log.Printf("Starting CA server on %s", *listen)
-	log.Fatal(app.Listen(*listen))
+	log.Fatal(app.ListenTLS(*listen, "ca-web-crt.pem", "ca-web-key.pem"))
 }

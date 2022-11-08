@@ -7,19 +7,11 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"log"
 	"math/big"
 	"os"
-	"strings"
 	"time"
 )
-
-// fqdn appends a dot to the end of a domain name if it doesn't already have one
-func fqdn(s string) string {
-	if strings.HasSuffix(s, ".") {
-		return s
-	}
-	return s + "."
-}
 
 // newCA generates a new CA cert and key
 func newCA() error {
@@ -61,12 +53,32 @@ func newCA() error {
 	}
 
 	// Write CA key
-	keyOut, err := os.OpenFile("ca-key.pem", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+	keyOut, err := os.OpenFile("ca-key.pem", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 	if err := pem.Encode(keyOut, &pem.Block{
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(caPriv),
 	}); err != nil {
 		return err
+	}
+
+	// Get CA certificate
+	caCrt, err := x509.ParseCertificate(caBytes)
+	if err != nil {
+		return err
+	}
+
+	// Generate cert and key for the CA
+	caWebCert, caWebKey, err := newCert("ca.internal", caCrt, caPriv)
+	if err != nil {
+		return err
+	}
+
+	// Write cert and key to files
+	if err := os.WriteFile("ca-web-crt.pem", caWebCert, 0644); err != nil {
+		log.Fatal(err)
+	}
+	if err := os.WriteFile("ca-web-key.pem", caWebKey, 0644); err != nil {
+		log.Fatal(err)
 	}
 
 	return nil
@@ -84,7 +96,7 @@ func newCert(domain string, caCert *x509.Certificate, caKey *rsa.PrivateKey) ([]
 		Subject: pkix.Name{
 			Organization: []string{"DigiShue CA"},
 		},
-		DNSNames:    []string{fqdn(domain)},
+		DNSNames:    []string{domain},
 		NotBefore:   time.Now(),
 		NotAfter:    time.Now().AddDate(10, 0, 0),
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},

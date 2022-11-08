@@ -56,10 +56,10 @@ func dnsChallenge(domain string) (string, error) {
 	}
 }
 
-// randHex generates a random hex string of the given length
-func randHex(n int) string {
+// randHex generates a random 32 character hex string
+func randHex() string {
 	const letters = "0123456789abcdef"
-	b := make([]byte, n)
+	b := make([]byte, 32)
 	for i := range b {
 		b[i] = letters[rand.Intn(len(letters))]
 	}

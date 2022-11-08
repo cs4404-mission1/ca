@@ -59,3 +59,10 @@ Notice keyserver.internal, resolve to 172.16.10.2 and assume vlan 10
 ```bash
 student@client:~$ sudo tcpdump -i ens3 -n -e vlan
 ```
+
+Add CA root certificate:
+
+```bash
+sudo cp ShueWorld_Root_CA.pem /etc/ssl/certs/
+sudo update-ca-certificates --fresh
+```
