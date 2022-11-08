@@ -68,7 +68,7 @@ func newCA() error {
 	}
 
 	// Generate cert and key for the CA
-	caWebCert, caWebKey, err := newCert("ca.internal", caCrt, caPriv)
+	caWebCert, caWebKey, err := newCert([]string{"ca.internal", "keyserver.internal"}, caCrt, caPriv)
 	if err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func newCA() error {
 }
 
 // newCert generates and signs a new certificate and key
-func newCert(domain string, caCert *x509.Certificate, caKey *rsa.PrivateKey) ([]byte, []byte, error) {
+func newCert(domains []string, caCert *x509.Certificate, caKey *rsa.PrivateKey) ([]byte, []byte, error) {
 	// Generate random serial number
 	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 65535))
 	if err != nil {
@@ -96,7 +96,7 @@ func newCert(domain string, caCert *x509.Certificate, caKey *rsa.PrivateKey) ([]
 		Subject: pkix.Name{
 			Organization: []string{"DigiShue CA"},
 		},
-		DNSNames:    []string{domain},
+		DNSNames:    domains,
 		NotBefore:   time.Now(),
 		NotAfter:    time.Now().AddDate(10, 0, 0),
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},

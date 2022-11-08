@@ -88,7 +88,7 @@ func main() {
 		delete(pendingValidations, domain)
 
 		// Generate certificate for domain
-		certPEM, keyPEM, err := newCert(domain, caCert, ca.PrivateKey.(*rsa.PrivateKey))
+		certPEM, keyPEM, err := newCert([]string{domain}, caCert, ca.PrivateKey.(*rsa.PrivateKey))
 		if err != nil {
 			return c.Status(500).SendString(err.Error())
 		}
